@@ -243,6 +243,28 @@ impl ServerPacketHandler {
                         if let ipv4::protocol::Protocol::Icmp = ipv4.protocol() {
                             let mut icmp_packet = icmp::IcmpPacket::new(ipv4.payload_mut())?;
                             if icmp_packet.kind() == Kind::EchoRequest {
+                                let client_ip = source;
+                                let dst_ip = destination;
+                                 // 检查 ping 的目标 IP 是否是客户端网段的 .1
+                                let mut client_network = client_ip.octets();
+                                client_network[3] = 1;
+                                let gateway_ip = Ipv4Addr::from(client_network);
+
+                                if dst_ip == gateway_ip {
+                                    // 如果 ping 的是网关 IP（x.x.x.1）
+                                    icmp_packet.set_kind(Kind::EchoReply);
+                                    icmp_packet.update_checksum();
+
+                                    // 回复源 IP = 网关IP
+                                    ipv4.set_source_ip(gateway_ip);
+                                    ipv4.set_destination_ip(client_ip);
+                                    ipv4.update_checksum();
+
+                                    return Ok(Some(NetPacket::new0(
+                                    net_packet.data_len(),
+                                    net_packet.raw_buffer().to_vec(),
+                                    )?));
+                                } else {
                                 //开启ping
                                 icmp_packet.set_kind(Kind::EchoReply);
                                 icmp_packet.update_checksum();
@@ -253,6 +275,7 @@ impl ServerPacketHandler {
                                     net_packet.data_len(),
                                     net_packet.raw_buffer().to_vec(),
                                 )?));
+                                }
                             }
                         }
                     }
